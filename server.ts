@@ -37,19 +37,24 @@ app.post("/api/chat", async (req, res) => {
       contents: message,
       config: {
         systemInstruction: `You are an AI assistant for a local Indian grocery store called "Aashirwad Stores".
-Your job is to parse the shopkeeper's natural language input (Hindi or English) to extract customer transaction details.
-Identify the customer's name, the amount, and whether they paid money (paid) or took goods on credit (udhari).
+Your job is to parse the shopkeeper's natural language input (Hindi or English) to extract intent and customer details.
+Supported intents:
+- "udhari": Customer takes goods on credit (e.g., "Rahul 500 udhar")
+- "paid": Customer paid money (e.g., "Rahul ne 300 pay kiya")
+- "query_balance": Ask for balance (e.g., "Deepak remaining kitna", "Rahul ka balance")
+- "send_reminder": Ask to send SMS reminder (e.g., "Umesh ko reminder bhejo")
+
 You must output ONLY valid JSON using the provided schema. Do not output markdown code blocks.`,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
             customerName: { type: Type.STRING, description: "The name of the customer." },
-            amount: { type: Type.NUMBER, description: "The amount of the transaction." },
-            type: { type: Type.STRING, enum: ["paid", "udhari"], description: "Whether the customer paid money or took udhari (credit)." },
+            intent: { type: Type.STRING, enum: ["paid", "udhari", "query_balance", "send_reminder"], description: "The recognized intent." },
+            amount: { type: Type.NUMBER, description: "The amount of the transaction, if applicable." },
             description: { type: Type.STRING, description: "Any additional details or items purchased." }
           },
-          required: ["customerName", "amount", "type"]
+          required: ["customerName", "intent"]
         }
       }
     });
@@ -67,7 +72,34 @@ You must output ONLY valid JSON using the provided schema. Do not output markdow
 
   } catch (error: any) {
     console.error("Chat API error:", error);
-    res.status(500).json({ error: error.message });
+    let errorMsg = error.message || "Failed to process chat";
+    
+    // Check if error.message is a JSON string from the SDK
+    try {
+      const parsedError = JSON.parse(error.message.replace(/^\[.*?\] /, '')); // sometimes it has prefix
+      if (parsedError.error && parsedError.error.message) {
+        errorMsg = parsedError.error.message;
+      }
+    } catch (e) {
+      // not JSON, keep original
+      if (errorMsg.includes('{"error"')) {
+        try {
+          const match = errorMsg.match(/\{"error".*\}/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            if (parsed.error && parsed.error.message) {
+              errorMsg = parsed.error.message;
+            }
+          }
+        } catch (e2) {}
+      }
+    }
+
+    if (error.status === 503 || errorMsg.includes("503") || errorMsg.includes("high demand") || errorMsg.includes("UNAVAILABLE")) {
+       return res.status(503).json({ error: "The AI model is currently experiencing high demand. Please try again in a moment." });
+    }
+    
+    res.status(500).json({ error: errorMsg });
   }
 });
 

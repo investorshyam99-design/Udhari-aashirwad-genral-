@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { collection, query, orderBy, onSnapshot, getDocs } from "firebase/firestore";
+import { Link } from "react-router";
 import { db } from "../lib/firebase";
 import { Users, IndianRupee, TrendingUp, ReceiptText, ArrowUpRight, ArrowDownRight } from "lucide-react";
 
@@ -27,7 +28,7 @@ export function Dashboard() {
       setStats(prev => ({ ...prev, totalCustomers: snapshot.size, totalPending: pending, totalReceived: received }));
     });
 
-    const qTransactions = query(collection(db, "transactions"), orderBy("date", "desc"));
+    const qTransactions = query(collection(db, "transactions"));
     const unsubscribeTransactions = onSnapshot(qTransactions, (snapshot) => {
       const txs: any[] = [];
       let todayCount = 0;
@@ -38,9 +39,18 @@ export function Dashboard() {
         const data = doc.data();
         txs.push({ id: doc.id, ...data });
         
-        if (data.date && data.date.toDate() >= today) {
+        const ts = data.timestamp || data.date;
+        if (ts && ts.toDate() >= today) {
           todayCount++;
         }
+      });
+      
+      txs.sort((a: any, b: any) => {
+        const tsA = a.timestamp || a.date;
+        const tsB = b.timestamp || b.date;
+        if (!tsA) return 1;
+        if (!tsB) return -1;
+        return tsB.toMillis() - tsA.toMillis();
       });
       
       setStats(prev => ({ ...prev, todayEntries: todayCount }));
@@ -84,17 +94,19 @@ export function Dashboard() {
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col">
         <div className="p-4 border-b border-slate-200 flex justify-between items-center">
           <h3 className="font-semibold text-slate-900">Recent Activity</h3>
-          <span className="text-xs font-semibold text-green-600 cursor-pointer">View All</span>
+          <Link to="/transactions" className="text-xs font-semibold text-green-600 cursor-pointer hover:underline">View All</Link>
         </div>
         <div className="divide-y divide-slate-100">
           {recentTransactions.length === 0 ? (
             <div className="p-4 text-center text-slate-500 text-sm">No recent transactions.</div>
           ) : (
-            recentTransactions.map((tx) => (
+            recentTransactions.map((tx) => {
+              const ts = tx.timestamp || tx.date;
+              return (
               <div key={tx.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
                 <div className="flex flex-col">
                   <p className="font-semibold text-slate-900 text-sm">{tx.customerName || "Unknown Customer"}</p>
-                  <p className="text-xs text-slate-500">{tx.date ? tx.date.toDate().toLocaleString('en-IN') : ''}</p>
+                  <p className="text-xs text-slate-500">{ts ? ts.toDate().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</p>
                 </div>
                 <div className="flex items-center gap-4">
                   <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -109,7 +121,7 @@ export function Dashboard() {
                   </div>
                 </div>
               </div>
-            ))
+            )})
           )}
         </div>
       </div>

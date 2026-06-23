@@ -20,28 +20,69 @@ export function Chatbot() {
   }, [messages]);
 
   const processTransaction = async (parsedData: any) => {
-    const { customerName, amount, type, description } = parsedData;
+    const { customerName, amount, intent, description } = parsedData;
     
-    // 1. Find or create customer
-    const q = query(collection(db, "customers"), where("name", "==", customerName));
+    // 1. Find customer (fuzzy match)
+    const q = query(collection(db, "customers"));
     const querySnapshot = await getDocs(q);
     
-    let customerId = "";
-    let currentBalance = 0;
-    let totalUdhari = 0;
-    let totalPaid = 0;
+    const matches: any[] = [];
 
-    if (querySnapshot.empty) {
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.name.toLowerCase().includes(customerName.toLowerCase())) {
+        matches.push({ id: doc.id, ...data });
+      }
+    });
+
+    if (matches.length > 1) {
+      const options = matches.map(m => `${m.name} (${m.mobile || 'No number'})`).join("\n- ");
+      return { reply: `I found multiple customers for "${customerName}". Please specify which one:\n- ${options}` };
+    }
+
+    let targetCustomer = matches.length === 1 ? matches[0] : null;
+    let customerId = targetCustomer ? targetCustomer.id : "";
+
+    if (intent === "query_balance") {
+      if (!targetCustomer) return { reply: `Customer "${customerName}" not found.` };
+      return { reply: `${targetCustomer.name} has a remaining balance of ₹${targetCustomer.balance}.` };
+    }
+
+    if (intent === "send_reminder") {
+      if (!targetCustomer) return { reply: `Customer "${customerName}" not found.` };
+      if (!targetCustomer.mobile) return { reply: `${targetCustomer.name} does not have a mobile number saved.` };
+      
+      const msg = `Namaste ${targetCustomer.name} ji, Aapka Rs.${targetCustomer.balance} udhar baki hai. Kripya payment kar dijiye. - Aashirwad Stores`;
+      try {
+        const res = await fetch("/api/sms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ number: targetCustomer.mobile, message: msg })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        return { reply: `✅ SMS reminder sent to ${targetCustomer.name} (${targetCustomer.mobile}).` };
+      } catch (e: any) {
+        return { reply: `❌ Failed to send SMS: ${e.message}` };
+      }
+    }
+    
+    let currentBalance = targetCustomer ? targetCustomer.balance : 0;
+    let totalUdhari = targetCustomer ? targetCustomer.total_udhari : 0;
+    let totalPaid = targetCustomer ? targetCustomer.total_paid : 0;
+    const actualName = targetCustomer ? targetCustomer.name : customerName;
+
+    if (!targetCustomer) {
       // Create new customer
-      if (type === 'udhari') {
+      if (intent === 'udhari') {
         currentBalance = amount;
         totalUdhari = amount;
-      } else {
+      } else if (intent === 'paid') {
         currentBalance = -amount;
         totalPaid = amount;
       }
       const newCustRef = await addDoc(collection(db, "customers"), {
-        name: customerName,
+        name: actualName,
         mobile: "",
         address: "",
         balance: currentBalance,
@@ -52,17 +93,10 @@ export function Chatbot() {
       customerId = newCustRef.id;
     } else {
       // Update existing
-      const customerDoc = querySnapshot.docs[0];
-      customerId = customerDoc.id;
-      const data = customerDoc.data();
-      totalUdhari = data.total_udhari || 0;
-      totalPaid = data.total_paid || 0;
-      currentBalance = data.balance || 0;
-
-      if (type === 'udhari') {
+      if (intent === 'udhari') {
         totalUdhari += amount;
         currentBalance += amount;
-      } else {
+      } else if (intent === 'paid') {
         totalPaid += amount;
         currentBalance -= amount;
       }
@@ -74,18 +108,18 @@ export function Chatbot() {
       });
     }
 
-    // 2. Add transaction
+    // Add transaction
     await addDoc(collection(db, "transactions"), {
       customerId,
-      customerName,
-      type,
+      customerName: actualName,
+      type: intent,
       amount,
       description: description || "AI Entry",
-      date: serverTimestamp(),
-      createdAt: serverTimestamp()
+      timestamp: serverTimestamp()
     });
 
-    return { customerName, amount, type, currentBalance };
+    const actionText = intent === 'paid' ? 'received from' : 'given as udhari to';
+    return { reply: `✅ Done! ₹${amount} ${actionText} ${actualName}.\nRemaining Balance: ₹${currentBalance}` };
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -112,12 +146,9 @@ export function Chatbot() {
 
       const parsed = data.result;
       
-      if (parsed && parsed.customerName && parsed.amount) {
+      if (parsed && parsed.customerName && parsed.intent) {
         const result = await processTransaction(parsed);
-        const actionText = result.type === 'paid' ? 'received from' : 'given as udhari to';
-        
-        const reply = `✅ Done! ₹${result.amount} ${actionText} ${result.customerName}.\nRemaining Balance: ₹${result.currentBalance}`;
-        setMessages(prev => [...prev, { role: 'assistant', text: reply }]);
+        setMessages(prev => [...prev, { role: 'assistant', text: result.reply }]);
       } else {
         setMessages(prev => [...prev, { role: 'assistant', text: "Sorry, I couldn't understand the details. Please try again. Example: 'Rahul 500 udhar'" }]);
       }
