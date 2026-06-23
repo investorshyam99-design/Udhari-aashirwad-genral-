@@ -1,0 +1,10 @@
+{
+  "name": "Aashirwad Stores Udhari Manager",
+  "description": "Smart AI-powered Udhari System for Indian Shops",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

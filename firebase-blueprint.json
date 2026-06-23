@@ -1,0 +1,95 @@
+{
+  "collections": [
+    {
+      "name": "users",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "email",
+          "type": "string"
+        },
+        {
+          "name": "role",
+          "type": "string"
+        }
+      ],
+      "rules": "allow read, write: if request.auth != null && request.auth.uid == resource.id;"
+    },
+    {
+      "name": "customers",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "mobile",
+          "type": "string"
+        },
+        {
+          "name": "address",
+          "type": "string"
+        },
+        {
+          "name": "total_udhari",
+          "type": "number"
+        },
+        {
+          "name": "total_paid",
+          "type": "number"
+        },
+        {
+          "name": "balance",
+          "type": "number"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "rules": "allow read, write: if request.auth != null;"
+    },
+    {
+      "name": "transactions",
+      "fields": [
+        {
+          "name": "customerId",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "customerName",
+          "type": "string"
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "amount",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "date",
+          "type": "timestamp",
+          "required": true
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "rules": "allow read, write: if request.auth != null;"
+    }
+  ]
+}
